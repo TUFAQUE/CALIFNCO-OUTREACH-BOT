@@ -1,0 +1,689 @@
+{
+  "name": "AI AGNECY - COMPLETE OUTREACH PIPELINE",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "b944bf40-85a4-45f1-b222-3acc11333c55",
+      "name": "Daily 9AM — Start Pipeline",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        1568,
+        -592
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.apify.com/v2/acts/apify~instagram-hashtag-scraper/runs",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "token",
+              "value": "REPLACE_APIFY_TOKEN"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"hashtags\": [\"AIagency\", \"businessautomation\", \"AItools\", \"digitalagency\", \"startupfounder\", \"marketingagency\"],\n  \"resultsLimit\": 60\n}",
+        "options": {}
+      },
+      "id": "d6727776-b6b2-4441-b9a7-a5c8cdd9c827",
+      "name": "Apify — Trigger Instagram Scraper",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1824,
+        -592
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 60
+      },
+      "id": "e23fb904-9954-4258-90c3-36e1b66051e7",
+      "name": "Wait 60s for Apify Run",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        2048,
+        -592
+      ],
+      "webhookId": "wait-apify-run"
+    },
+    {
+      "parameters": {
+        "url": "https://api.apify.com/v2/acts/apify~instagram-hashtag-scraper/runs/last/dataset/items",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "token",
+              "value": "REPLACE_APIFY_TOKEN"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "18d0a310-c84d-4415-bd42-51af69c96294",
+      "name": "Apify — Fetch Scraped Results",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        2336,
+        -592
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst scored = [];\n\nfor (const item of items) {\n  const data = item.json;\n  let score = 0;\n\n  const username = data.ownerUsername || data.username || '';\n  const followers = data.ownerFollowersCount || data.followersCount || 0;\n  const bio = (data.ownerBiography || data.biography || data.caption || '').toLowerCase();\n  const likes = data.likesCount || data.likes || 0;\n\n  if (followers >= 1000 && followers <= 50000) score += 30;\n  else if (followers > 50000 && followers <= 200000) score += 15;\n  else score += 5;\n\n  const engRate = followers > 0 ? (likes / followers) * 100 : 0;\n  if (engRate >= 3) score += 30;\n  else if (engRate >= 1) score += 15;\n  else score += 5;\n\n  const keywords = ['business', 'agency', 'marketing', 'startup', 'founder', 'ceo', 'growth', 'saas', 'ecommerce', 'coach', 'consultant', 'entrepreneur', 'digital', 'brand'];\n  for (const kw of keywords) {\n    if (bio.includes(kw)) score += 5;\n  }\n\n  if (score >= 20 && username) {\n    scored.push({\n      json: {\n        username: username,\n        full_name: data.ownerFullName || data.fullName || '',\n        followers: followers,\n        engagement_rate: engRate.toFixed(2),\n        bio: bio,\n        profile_url: `https://instagram.com/${username}`,\n        platform: 'instagram',\n        score: score,\n        status: 'new',\n        replied: false,\n        dm_sent_at: '',\n        followup_sent: false,\n        followup_sent_at: '',\n        timestamp: new Date().toISOString()\n      }\n    });\n  }\n}\n\nreturn scored.length > 0 ? scored : [{ json: { error: 'no qualified leads', total_checked: items.length } }];"
+      },
+      "id": "d9ecaea7-6600-4a52-83c9-e754337b3550",
+      "name": "Lead Scorer — Filter Quality Leads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2608,
+        -592
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "value": "REPLACE_YOUR_GOOGLE_SHEET_ID",
+          "__rl": true,
+          "mode": "id"
+        },
+        "sheetName": {
+          "value": "Leads",
+          "__rl": true,
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {}
+        },
+        "options": {}
+      },
+      "id": "5057e991-20ae-4e7c-8487-1b4e35c5e6f7",
+      "name": "Save Leads → Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.3,
+      "position": [
+        1808,
+        -352
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const leads = $input.all();\nconst newLeads = leads.filter(item => {\n  return item.json.status === 'new' && item.json.username && item.json.username.trim() !== '';\n});\nreturn newLeads.slice(0, 5).map(item => ({ json: item.json }));"
+      },
+      "id": "be7e87eb-8d0f-43a0-ba31-bbb43c076552",
+      "name": "Filter Max 100 New Leads",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2048,
+        -352
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer REPLACE_GROQ_API_KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"model\": \"llama-3.1-8b-instant\",\n  \"max_tokens\": 150,\n  \"temperature\": 0.85,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You are an outreach specialist for Califnco, an AI automation agency. Write short, genuine, personalized Instagram DMs. Max 3 sentences. No emojis. Sound human. Reference their bio and connect to AI automation services.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Write a personalized DM to a business owner in digital marketing and AI space. Connect their work to how Califnco AI automation agency can help them save time and grow faster. Max 3 sentences, no emojis, sound human.\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "c7e20651-9de0-403c-bb02-e61da4cb2b4f",
+      "name": "Groq — Generate Personalized DM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        2336,
+        -352
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const groqResp = $json;\nconst dmText = groqResp.choices?.[0]?.message?.content?.trim() || 'DM generation failed';\nconst lead = $('Filter Max 100 New Leads').item.json;\n\nreturn [{\n  json: {\n    ...lead,\n    generated_dm: dmText,\n    status: 'dm_sent',\n    dm_sent_at: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "2ff626b3-20db-477c-be84-1beb217e45a3",
+      "name": "Merge DM + Lead Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2608,
+        -352
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const delay = 3000;\nawait new Promise(resolve => setTimeout(resolve, delay));\nreturn $input.all();"
+      },
+      "id": "f0a74fb2-95ac-4a8a-970e-b5a7d41fbfb6",
+      "name": "Random Delay 2-5min (Anti-Spam)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1808,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "value": "REPLACE_YOUR_GOOGLE_SHEET_ID",
+          "__rl": true,
+          "mode": "id"
+        },
+        "sheetName": {
+          "value": "DM_Log",
+          "__rl": true,
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "username": "={{ $json.username }}",
+            "platform": "={{ $json.platform }}",
+            "bio": "={{ $json.bio }}",
+            "followers": "={{ $json.followers }}",
+            "score": "={{ $json.score }}",
+            "generated_dm": "={{ $json.generated_dm }}",
+            "dm_sent_at": "={{ $json.dm_sent_at }}",
+            "status": "={{ $json.status }}",
+            "replied": "=false",
+            "followup_sent": "=false",
+            "followup_sent_at": "="
+          }
+        },
+        "options": {}
+      },
+      "id": "df9c0a2b-18b9-4736-b011-787866feb78c",
+      "name": "Log DM → Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.3,
+      "position": [
+        2048,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "value": "REPLACE_YOUR_GOOGLE_SHEET_ID",
+          "__rl": true,
+          "mode": "id"
+        },
+        "sheetName": {
+          "value": "DM_Log",
+          "__rl": true,
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "cd50716a-1a33-43c8-a9a5-14e0c452eb26",
+      "name": "Read DM Log for Follow-up Check",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.3,
+      "position": [
+        2336,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const leads = $input.all();\nconst now = new Date();\nconst THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;\n\nconst needsFollowup = leads.filter(item => {\n  const row = item.json;\n  if (row.status !== 'dm_sent') return false;\n  if (row.replied === 'true' || row.replied === true) return false;\n  if (row.followup_sent === 'true' || row.followup_sent === true) return false;\n  if (!row.dm_sent_at || row.dm_sent_at.trim() === '') return false;\n  const sentDate = new Date(row.dm_sent_at);\n  return (now - sentDate) >= THREE_DAYS_MS;\n});\n\nreturn needsFollowup.slice(0, 50).map(item => ({ json: item.json }));"
+      },
+      "id": "de493fdb-bbfa-4be6-8f23-986442027040",
+      "name": "Filter Leads Needing Follow-up",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2608,
+        -112
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.groq.com/openai/v1/chat/completions",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "Bearer REPLACE_GROQ_API_KEY"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\n  \"model\": \"llama-3.1-8b-instant\",\n  \"max_tokens\": 120,\n  \"temperature\": 0.9,\n  \"messages\": [\n    {\n      \"role\": \"system\",\n      \"content\": \"You write follow-up DMs for Califnco AI agency. 2 sentences max. No emojis. Sound human. Mention a specific result like 70% less manual work or doubled lead flow.\"\n    },\n    {\n      \"role\": \"user\",\n      \"content\": \"Write a follow-up DM for a business owner. First message was 3 days ago, no reply. Mention a specific result Califnco delivered for a similar business. 2 sentences, no emojis.\"\n    }\n  ]\n}",
+        "options": {}
+      },
+      "id": "1f62e030-1fb9-403d-bc8c-1c66a1a71d4b",
+      "name": "Groq — Generate Follow-up DM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.1,
+      "position": [
+        1792,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const groqResp = $json;\nconst followupText = groqResp.choices?.[0]?.message?.content?.trim() || 'Follow-up generation failed';\nconst lead = $('Filter Leads Needing Follow-up').item.json;\n\nreturn [{\n  json: {\n    ...lead,\n    followup_dm: followupText,\n    followup_sent: true,\n    followup_sent_at: new Date().toISOString(),\n    status: 'followup_sent'\n  }\n}];"
+      },
+      "id": "4f129f3f-2c68-4198-b261-f2dc5cdf4b4c",
+      "name": "Merge Follow-up + Lead Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2048,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const delay = 5000;\nawait new Promise(resolve => setTimeout(resolve, delay));\nreturn $input.all();"
+      },
+      "id": "2510b0eb-b148-489f-9f31-ae6535acaaa0",
+      "name": "Random Delay 3-7min (Follow-up)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2336,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "value": "REPLACE_YOUR_GOOGLE_SHEET_ID",
+          "__rl": true,
+          "mode": "id"
+        },
+        "sheetName": {
+          "value": "DM_Log",
+          "__rl": true,
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "username": "={{ $json.username }}",
+            "platform": "={{ $json.platform }}",
+            "bio": "={{ $json.bio }}",
+            "followers": "={{ $json.followers }}",
+            "score": "={{ $json.score }}",
+            "generated_dm": "={{ $json.followup_dm }}",
+            "dm_sent_at": "={{ $json.followup_sent_at }}",
+            "status": "={{ $json.status }}",
+            "replied": "=false",
+            "followup_sent": "=true",
+            "followup_sent_at": "={{ $json.followup_sent_at }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "2540a961-af39-4821-8d28-4c9130bf2513",
+      "name": "Log Follow-up → Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.3,
+      "position": [
+        2608,
+        128
+      ]
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "value": "REPLACE_YOUR_GOOGLE_SHEET_ID",
+          "__rl": true,
+          "mode": "id"
+        },
+        "sheetName": {
+          "value": "DM_Log",
+          "__rl": true,
+          "mode": "name"
+        },
+        "options": {}
+      },
+      "id": "0a71bdd2-8aee-4032-9cbd-f98b3a95a1b7",
+      "name": "Read All DM Data for Report",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.3,
+      "position": [
+        1776,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const allData = $input.all().map(i => i.json);\nconst today = new Date();\nconst todayStr = today.toDateString();\n\nconst todayData = allData.filter(row => {\n  if (!row.dm_sent_at) return false;\n  return new Date(row.dm_sent_at).toDateString() === todayStr;\n});\n\nconst firstDMs = todayData.filter(r => r.status === 'dm_sent').length;\nconst followups = todayData.filter(r => r.status === 'followup_sent').length;\nconst totalDMs = firstDMs + followups;\nconst replies = allData.filter(r => r.replied === 'true' || r.replied === true).length;\nconst totalSent = allData.length;\nconst convRate = totalSent > 0 ? ((replies / totalSent) * 100).toFixed(1) : '0.0';\n\nconst topLeads = todayData\n  .sort((a, b) => (Number(b.score) || 0) - (Number(a.score) || 0))\n  .slice(0, 5)\n  .map(r => `@${r.username} (score: ${r.score}, followers: ${r.followers})`)\n  .join('\\n');\n\nconst reportDate = today.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });\n\nconst emailBody = `📊 DAILY OUTREACH REPORT — ${reportDate}\\n\\n━━━━━━━━━━━━━━━━━━━━━━━\\n✅ First DMs Sent Today:     ${firstDMs}\\n🔁 Follow-ups Sent Today:    ${followups}\\n📨 Total Sent Today:         ${totalDMs}\\n💬 Total Replies (all time): ${replies}\\n📈 Overall Conversion Rate:  ${convRate}%\\n━━━━━━━━━━━━━━━━━━━━━━━\\n\\n🏆 TOP LEADS TODAY:\\n${topLeads || 'No new leads today'}\\n\\n━━━━━━━━━━━━━━━━━━━━━━━\\n⚡ Powered by Califnco AI Outreach Bot`;\n\nreturn [{\n  json: {\n    report_date: reportDate,\n    dms_sent_today: firstDMs,\n    followups_sent_today: followups,\n    total_sent_today: totalDMs,\n    total_replies_alltime: replies,\n    overall_conversion_rate: convRate + '%',\n    top_leads_today: topLeads,\n    email_body: emailBody\n  }\n}];"
+      },
+      "id": "0068d0ca-20d2-40b9-9d18-b6c0d220c82d",
+      "name": "Calculate Daily Stats",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2048,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "value": "REPLACE_YOUR_GOOGLE_SHEET_ID",
+          "__rl": true,
+          "mode": "id"
+        },
+        "sheetName": {
+          "value": "Report",
+          "__rl": true,
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "report_date": "={{ $json.report_date }}",
+            "dms_sent_today": "={{ $json.dms_sent_today }}",
+            "followups_sent_today": "={{ $json.followups_sent_today }}",
+            "total_sent_today": "={{ $json.total_sent_today }}",
+            "total_replies_alltime": "={{ $json.total_replies_alltime }}",
+            "overall_conversion_rate": "={{ $json.overall_conversion_rate }}",
+            "top_leads_today": "={{ $json.top_leads_today }}"
+          }
+        },
+        "options": {}
+      },
+      "id": "bf59e6fd-3cd1-42dc-95ba-d16a9df2ac96",
+      "name": "Save Report → Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.3,
+      "position": [
+        2336,
+        368
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "REPLACE_YOUR_EMAIL@gmail.com",
+        "subject": "={{ '📊 Daily Outreach Report — ' + $json.report_date }}",
+        "message": "={{ $json.email_body }}",
+        "options": {}
+      },
+      "id": "afc9d196-97d9-4821-967c-1ad1df5e53d2",
+      "name": "Send Daily Report — Gmail",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        2592,
+        368
+      ],
+      "webhookId": "181393f3-2ba2-4cdd-8035-16b0b91f4526"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Daily 9AM — Start Pipeline": {
+      "main": [
+        [
+          {
+            "node": "Apify — Trigger Instagram Scraper",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apify — Trigger Instagram Scraper": {
+      "main": [
+        [
+          {
+            "node": "Wait 60s for Apify Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 60s for Apify Run": {
+      "main": [
+        [
+          {
+            "node": "Apify — Fetch Scraped Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apify — Fetch Scraped Results": {
+      "main": [
+        [
+          {
+            "node": "Lead Scorer — Filter Quality Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lead Scorer — Filter Quality Leads": {
+      "main": [
+        [
+          {
+            "node": "Save Leads → Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Leads → Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Filter Max 100 New Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Max 100 New Leads": {
+      "main": [
+        [
+          {
+            "node": "Groq — Generate Personalized DM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq — Generate Personalized DM": {
+      "main": [
+        [
+          {
+            "node": "Merge DM + Lead Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge DM + Lead Data": {
+      "main": [
+        [
+          {
+            "node": "Random Delay 2-5min (Anti-Spam)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Random Delay 2-5min (Anti-Spam)": {
+      "main": [
+        [
+          {
+            "node": "Log DM → Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log DM → Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Read DM Log for Follow-up Check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read DM Log for Follow-up Check": {
+      "main": [
+        [
+          {
+            "node": "Filter Leads Needing Follow-up",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Leads Needing Follow-up": {
+      "main": [
+        [
+          {
+            "node": "Groq — Generate Follow-up DM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq — Generate Follow-up DM": {
+      "main": [
+        [
+          {
+            "node": "Merge Follow-up + Lead Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Merge Follow-up + Lead Data": {
+      "main": [
+        [
+          {
+            "node": "Random Delay 3-7min (Follow-up)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Random Delay 3-7min (Follow-up)": {
+      "main": [
+        [
+          {
+            "node": "Log Follow-up → Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Follow-up → Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Read All DM Data for Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read All DM Data for Report": {
+      "main": [
+        [
+          {
+            "node": "Calculate Daily Stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Daily Stats": {
+      "main": [
+        [
+          {
+            "node": "Save Report → Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Report → Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "Send Daily Report — Gmail",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "e4f6f2a6-3c97-48bc-8d7b-a4d5f29a305f",
+  "meta": {
+    "instanceId": "174fa04d7703aeb8f1b65de9f24de61caafa4d6607ee8f9dde8eb53249dc967f"
+  },
+  "id": "phkLH2StPKcB2u3s",
+  "tags": []
+}
